@@ -1,0 +1,18 @@
+[Unit]
+Description=QRZ Callsign Lookup API
+After=network.target
+
+[Service]
+Type=simple
+User=peter
+WorkingDirectory=/home/peter
+ExecStart=/home/peter/qrzlook
+Restart=on-failure
+RestartSec=5
+
+Environment=QRZ_USERNAME=G8GDS
+Environment=QRZ_PASSWORD=spang&noo
+Environment=QRZ_PORT=8091
+
+[Install]
+WantedBy=multi-user.target
