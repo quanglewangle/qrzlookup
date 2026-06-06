@@ -1,0 +1,12 @@
+[Unit]
+Description=Shopping Backend
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/peter/shopping_new
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

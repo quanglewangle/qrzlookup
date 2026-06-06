@@ -1,0 +1,11 @@
+# Add these location blocks inside the fimblefowl.co.uk server block in /etc/nginx/nginx.conf
+
+             # qrz lookup
+             location /qrz/ {
+               proxy_pass http://127.0.0.1:8091/;
+           }
+
+             # shopping
+             location /json {
+               proxy_pass http://127.0.0.1:8080;
+           }
