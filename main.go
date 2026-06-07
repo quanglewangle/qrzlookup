@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/quanglewangle/qrzlook/db"
 	"github.com/quanglewangle/qrzlook/qrz"
 )
 
@@ -247,6 +248,7 @@ func main() {
 		port = "8091"
 	}
 
+	db.OpenDatabase()
 	client := qrz.NewClient(username, password)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +276,10 @@ func main() {
 			w.WriteHeader(status)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
+		}
+
+		if result.Lat != "" && result.Lon != "" {
+			db.UpsertQTH(result.Callsign, result.Lat, result.Lon)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
