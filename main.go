@@ -378,6 +378,42 @@ func main() {
 		w.Write([]byte(indexHTML))
 	})
 
+	// POST /sites/refresh-qnh — populate QNH for all sites from terrain50 (no QRZ call)
+	http.HandleFunc("/sites/refresh-qnh", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if t50Dir == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "TERRAIN50_DIR not configured"})
+			return
+		}
+		sites, err := db.GetAllQTH()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		updated, skipped := 0, 0
+		for _, s := range sites {
+			if s.Lat == 0 && s.Lon == 0 {
+				skipped++
+				continue
+			}
+			elev, err := terrain50.ElevationAt(t50Dir, float64(s.Lat), float64(s.Lon))
+			if err != nil {
+				skipped++
+				continue
+			}
+			if db.SetQNHFromTerrain(s.CallSign, elev) == nil {
+				updated++
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]int{"updated": updated, "skipped": skipped})
+	})
+
 	// GET /sites — list all; POST /sites — create
 	http.HandleFunc("/sites", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

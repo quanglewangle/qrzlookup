@@ -105,3 +105,8 @@ func DeleteQTH(callsign string) error {
 	_, err := database.Exec(`DELETE FROM qth WHERE call_sign=$1`, callsign)
 	return err
 }
+
+func SetQNHFromTerrain(callsign string, qnh float64) error {
+	_, err := database.Exec(`UPDATE qth SET qnh=$2 WHERE call_sign=$1`, callsign, qnh)
+	return err
+}
