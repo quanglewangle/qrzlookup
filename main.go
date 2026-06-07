@@ -16,312 +16,319 @@ const indexHTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QRZ Callsign Lookup</title>
+<title>ROC Locations</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f0f4f8;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 2rem 1rem;
-    color: #1a202c;
-  }
-
-  h1 {
-    font-size: 1.8rem;
-    font-weight: 700;
-    margin-bottom: 0.25rem;
-    color: #2d3748;
-  }
-
-  .subtitle {
-    color: #718096;
-    margin-bottom: 2rem;
-    font-size: 0.95rem;
-  }
-
-  form {
-    display: flex;
-    gap: 0.5rem;
-    width: 100%;
-    max-width: 480px;
-    margin-bottom: 2rem;
-  }
-
-  input[type="text"] {
-    flex: 1;
-    padding: 0.75rem 1rem;
-    font-size: 1.1rem;
-    border: 2px solid #cbd5e0;
-    border-radius: 8px;
-    outline: none;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    transition: border-color 0.2s;
-  }
-
-  input[type="text"]:focus { border-color: #4299e1; }
-
-  button {
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    background: #3182ce;
+  nav {
+    background: #2b6cb0;
     color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.2s;
-    white-space: nowrap;
-  }
-
-  button:hover { background: #2b6cb0; }
-  button:disabled { background: #a0aec0; cursor: not-allowed; }
-
-  #result {
-    width: 100%;
-    max-width: 480px;
-    margin-bottom: 2rem;
-  }
-
-  .card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  }
-
-  .callsign {
-    font-size: 2rem;
-    font-weight: 800;
-    color: #2b6cb0;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.25rem;
-  }
-
-  .name {
-    font-size: 1.2rem;
-    color: #2d3748;
-    margin-bottom: 1.25rem;
-    font-weight: 500;
-  }
-
-  .divider {
-    border: none;
-    border-top: 1px solid #e2e8f0;
-    margin-bottom: 1.25rem;
-  }
-
-  .fields { display: flex; flex-direction: column; gap: 0.6rem; }
-
-  .field {
+    padding: 0 1.5rem;
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 1rem;
+    align-items: center;
+    gap: 0;
+    height: 52px;
   }
-
-  .field-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #a0aec0;
-    flex-shrink: 0;
-  }
-
-  .field-value {
-    font-size: 0.95rem;
-    color: #2d3748;
-    text-align: right;
-  }
-
-  .map-link {
-    display: inline-block;
-    margin-top: 1.25rem;
-    font-size: 0.85rem;
-    color: #3182ce;
+  nav .brand { font-weight: 700; font-size: 1.1rem; margin-right: 1.5rem; }
+  nav a {
+    color: rgba(255,255,255,0.8);
     text-decoration: none;
-  }
-  .map-link:hover { text-decoration: underline; }
-
-  .error {
-    background: #fff5f5;
-    border: 1px solid #fed7d7;
-    color: #c53030;
-    padding: 1rem 1.25rem;
-    border-radius: 8px;
+    padding: 0 1rem;
+    height: 52px;
+    line-height: 52px;
     font-size: 0.95rem;
+    transition: background 0.15s;
   }
+  nav a:hover, nav a.active { background: rgba(0,0,0,0.2); color: white; }
 
-  .spinner {
-    width: 32px; height: 32px;
-    border: 3px solid #e2e8f0;
-    border-top-color: #3182ce;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    margin: 1rem auto;
+  .view { display: none; padding: 2rem 1rem; }
+  .view.active { display: block; }
+
+  /* Lookup view */
+  #view-lookup { max-width: 520px; margin: 0 auto; }
+  #view-lookup h2 { font-size: 1.3rem; color: #2d3748; margin-bottom: 1.25rem; }
+  .search-form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+  .search-form input {
+    flex: 1; padding: 0.7rem 1rem; font-size: 1.05rem;
+    border: 2px solid #cbd5e0; border-radius: 8px; outline: none;
+    text-transform: uppercase; letter-spacing: 0.05em;
   }
+  .search-form input:focus { border-color: #4299e1; }
+  .btn { padding: 0.7rem 1.25rem; font-size: 0.95rem; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+  .btn-primary { background: #3182ce; color: white; }
+  .btn-primary:hover { background: #2b6cb0; }
+  .btn-primary:disabled { background: #a0aec0; cursor: not-allowed; }
+  .btn-success { background: #38a169; color: white; }
+  .btn-success:hover { background: #2f855a; }
+  .btn-danger { background: #e53e3e; color: white; }
+  .btn-danger:hover { background: #c53030; }
+  .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+
+  .card { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; }
+  .callsign-big { font-size: 2rem; font-weight: 800; color: #2b6cb0; letter-spacing: 0.05em; }
+  .name-big { font-size: 1.15rem; color: #2d3748; font-weight: 500; margin: 0.2rem 0 1rem; }
+  .divider { border: none; border-top: 1px solid #e2e8f0; margin: 1rem 0; }
+  .fields { display: flex; flex-direction: column; gap: 0.55rem; }
+  .field { display: flex; justify-content: space-between; gap: 1rem; }
+  .field-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #a0aec0; }
+  .field-value { font-size: 0.92rem; color: #2d3748; text-align: right; }
+  .map-link { display: inline-block; margin-top: 1rem; font-size: 0.85rem; color: #3182ce; text-decoration: none; }
+  .map-link:hover { text-decoration: underline; }
+  .error-box { background: #fff5f5; border: 1px solid #fed7d7; color: #c53030; padding: 1rem 1.25rem; border-radius: 8px; font-size: 0.92rem; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #3182ce; border-radius: 50%; animation: spin 0.7s linear infinite; margin: 1.5rem auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  #sites-section {
-    width: 100%;
-    max-width: 480px;
-  }
+  /* Sites view */
+  #view-sites { max-width: 800px; margin: 0 auto; }
+  .sites-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .sites-header h2 { font-size: 1.3rem; color: #2d3748; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); font-size: 0.88rem; }
+  th { background: #edf2f7; color: #718096; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.65rem 1rem; text-align: left; }
+  td { padding: 0.6rem 1rem; border-top: 1px solid #f0f4f8; color: #2d3748; }
+  tr:hover td { background: #f7fafc; }
+  .cs-link { font-weight: 700; color: #2b6cb0; cursor: pointer; }
+  .cs-link:hover { text-decoration: underline; }
+  .actions { display: flex; gap: 0.4rem; }
 
-  #sites-section h2 {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #4a5568;
-    margin-bottom: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
+  /* Map view */
+  #view-map { padding: 0; }
+  #map { height: calc(100vh - 52px); width: 100%; }
 
-  .sites-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-    font-size: 0.9rem;
-  }
-
-  .sites-table th {
-    background: #edf2f7;
-    color: #718096;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 0.6rem 1rem;
-    text-align: left;
-  }
-
-  .sites-table td {
-    padding: 0.6rem 1rem;
-    border-top: 1px solid #f0f4f8;
-    color: #2d3748;
-  }
-
-  .sites-table tr:hover td { background: #f7fafc; }
-
-  .sites-table .cs {
-    font-weight: 700;
-    color: #2b6cb0;
-    cursor: pointer;
-  }
-  .sites-table .cs:hover { text-decoration: underline; }
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal-box { background: white; border-radius: 12px; padding: 1.75rem; width: 100%; max-width: 420px; margin: 1rem; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+  .modal-box h3 { font-size: 1.15rem; margin-bottom: 1.25rem; color: #2d3748; }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label { display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .form-group input { width: 100%; padding: 0.6rem 0.8rem; border: 2px solid #cbd5e0; border-radius: 8px; font-size: 0.95rem; outline: none; }
+  .form-group input:focus { border-color: #4299e1; }
+  .modal-footer { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.25rem; }
+  .btn-ghost { background: #e2e8f0; color: #4a5568; }
+  .btn-ghost:hover { background: #cbd5e0; }
 </style>
 </head>
 <body>
-<h1>QRZ Lookup</h1>
-<p class="subtitle">Amateur radio callsign lookup</p>
 
-<form id="form">
-  <input type="text" id="callsign" placeholder="e.g. G8GDS" autocomplete="off" autocorrect="off" spellcheck="false">
-  <button type="submit" id="btn">Look up</button>
-</form>
+<nav>
+  <span class="brand">ROC Locations</span>
+  <a href="#" class="active" data-view="lookup">Lookup</a>
+  <a href="#" data-view="sites">Sites</a>
+  <a href="#" data-view="map">Map</a>
+</nav>
 
-<div id="result"></div>
+<div id="view-lookup" class="view active">
+  <h2>Callsign Lookup</h2>
+  <form class="search-form" id="lookup-form">
+    <input type="text" id="cs-input" placeholder="e.g. G8GDS" autocomplete="off" autocorrect="off" spellcheck="false">
+    <button class="btn btn-primary" id="lookup-btn" type="submit">Look up</button>
+  </form>
+  <div id="lookup-result"></div>
+</div>
 
-<div id="sites-section">
-  <h2>Known Sites</h2>
-  <div id="sites"></div>
+<div id="view-sites" class="view">
+  <div class="sites-header">
+    <h2>ROC Sites</h2>
+    <button class="btn btn-success" onclick="openAddModal()">+ Add New</button>
+  </div>
+  <table>
+    <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th></th></tr></thead>
+    <tbody id="sites-tbody"></tbody>
+  </table>
+</div>
+
+<div id="view-map" class="view">
+  <div id="map"></div>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <h3 id="modal-title">Add Site</h3>
+    <form id="site-form">
+      <div class="form-group">
+        <label>Callsign</label>
+        <input type="text" id="f-callsign" required style="text-transform:uppercase">
+        <button type="button" class="btn btn-primary btn-sm" style="margin-top:0.4rem" onclick="qrzFill()">Fill from QRZ</button>
+      </div>
+      <div class="form-group"><label>Name</label><input type="text" id="f-name"></div>
+      <div class="form-group"><label>Latitude</label><input type="number" id="f-lat" step="any"></div>
+      <div class="form-group"><label>Longitude</label><input type="number" id="f-lon" step="any"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="modal-save">Save</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <script>
-const form = document.getElementById('form');
-const input = document.getElementById('callsign');
-const btn = document.getElementById('btn');
-const result = document.getElementById('result');
+// ── Navigation ───────────────────────────────────────────────
+let leafletMap = null;
 
-form.addEventListener('submit', async e => {
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const view = a.dataset.view;
+    document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + view).classList.add('active');
+    if (view === 'sites') loadSitesTable();
+    if (view === 'map') initMap();
+  });
+});
+
+// ── Lookup ───────────────────────────────────────────────────
+document.getElementById('lookup-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const cs = input.value.trim().toUpperCase();
+  const cs = document.getElementById('cs-input').value.trim().toUpperCase();
   if (!cs) return;
-
+  const btn = document.getElementById('lookup-btn');
+  const res = document.getElementById('lookup-result');
   btn.disabled = true;
-  result.innerHTML = '<div class="spinner"></div>';
-
+  res.innerHTML = '<div class="spinner"></div>';
   try {
-    const resp = await fetch('/qrz/lookup/' + encodeURIComponent(cs));
-    const data = await resp.json();
-
+    const data = await fetch('/qrz/lookup/' + encodeURIComponent(cs)).then(r => r.json());
     if (data.error) {
-      result.innerHTML = '<div class="error">' + escHtml(data.error) + '</div>';
+      res.innerHTML = '<div class="error-box">' + esc(data.error) + '</div>';
     } else {
-      const location = [data.city, data.state, data.country].filter(Boolean).join(', ');
+      const loc = [data.city, data.state, data.country].filter(Boolean).join(', ');
       const mapURL = data.lat && data.lon
-        ? 'https://www.openstreetmap.org/?mlat=' + data.lat + '&mlon=' + data.lon + '&zoom=10'
-        : null;
-
-      result.innerHTML = '<div class="card">' +
-        '<div class="callsign">' + escHtml(data.callsign) + '</div>' +
-        '<div class="name">' + escHtml(data.name || '—') + '</div>' +
+        ? 'https://www.openstreetmap.org/?mlat=' + data.lat + '&mlon=' + data.lon + '&zoom=10' : null;
+      res.innerHTML = '<div class="card">' +
+        '<div class="callsign-big">' + esc(data.callsign) + '</div>' +
+        '<div class="name-big">' + esc(data.name || '—') + '</div>' +
         '<hr class="divider">' +
         '<div class="fields">' +
-        (location ? field('Location', location) : '') +
-        (data.grid ? field('Grid', data.grid) : '') +
-        (data.lat && data.lon ? field('Lat / Lon', data.lat + ', ' + data.lon) : '') +
+        (loc ? fld('Location', loc) : '') +
+        (data.grid ? fld('Grid', data.grid) : '') +
+        (data.lat && data.lon ? fld('Lat / Lon', data.lat + ', ' + data.lon) : '') +
         '</div>' +
         (mapURL ? '<a class="map-link" href="' + mapURL + '" target="_blank" rel="noopener">View on map ↗</a>' : '') +
         '</div>';
-
-      loadSites();
     }
-  } catch (err) {
-    result.innerHTML = '<div class="error">Request failed. Please try again.</div>';
-  } finally {
-    btn.disabled = false;
-  }
+  } catch { res.innerHTML = '<div class="error-box">Request failed. Please try again.</div>'; }
+  btn.disabled = false;
 });
 
-async function loadSites() {
-  try {
-    const resp = await fetch('/qrz/sites');
-    const sites = await resp.json();
-    const el = document.getElementById('sites');
+// ── Sites table ──────────────────────────────────────────────
+async function loadSitesTable() {
+  const tbody = document.getElementById('sites-tbody');
+  tbody.innerHTML = '<tr><td colspan="5"><div class="spinner"></div></td></tr>';
+  const sites = await fetch('/qrz/sites').then(r => r.json());
+  if (!sites || !sites.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
+  tbody.innerHTML = sites.map(s =>
+    '<tr>' +
+    '<td><span class="cs-link" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
+    '<td>' + esc(s.name) + '</td>' +
+    '<td>' + s.lat.toFixed(4) + '</td>' +
+    '<td>' + s.lon.toFixed(4) + '</td>' +
+    '<td><div class="actions">' +
+    '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
+    '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
+    '</div></td></tr>'
+  ).join('');
+}
 
-    if (!sites || sites.length === 0) {
-      el.innerHTML = '<p style="color:#a0aec0;font-size:0.9rem">No sites yet.</p>';
-      return;
-    }
+async function deleteSite(cs) {
+  if (!confirm('Delete ' + cs + '?')) return;
+  await fetch('/qrz/sites/' + encodeURIComponent(cs), { method: 'DELETE' });
+  loadSitesTable();
+}
 
-    el.innerHTML = '<table class="sites-table"><thead><tr>' +
-      '<th>Callsign</th><th>Lat</th><th>Lon</th>' +
-      '</tr></thead><tbody>' +
-      sites.map(s =>
-        '<tr><td class="cs" onclick="prefill(\'' + escHtml(s.call_sign) + '\')">' + escHtml(s.call_sign) + '</td>' +
-        '<td>' + s.lat.toFixed(4) + '</td>' +
-        '<td>' + s.lon.toFixed(4) + '</td></tr>'
-      ).join('') +
-      '</tbody></table>';
-  } catch (e) {
-    document.getElementById('sites').innerHTML = '';
+function lookupAndSwitch(cs) {
+  document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+  document.querySelector('[data-view="lookup"]').classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-lookup').classList.add('active');
+  document.getElementById('cs-input').value = cs;
+  document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
+}
+
+// ── Modal ────────────────────────────────────────────────────
+let editMode = false;
+let editCallsign = '';
+
+function openAddModal() {
+  editMode = false; editCallsign = '';
+  document.getElementById('modal-title').textContent = 'Add Site';
+  document.getElementById('f-callsign').value = '';
+  document.getElementById('f-callsign').disabled = false;
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-lat').value = '';
+  document.getElementById('f-lon').value = '';
+  document.getElementById('modal').classList.add('open');
+}
+
+function openEditModal(s) {
+  editMode = true; editCallsign = s.call_sign;
+  document.getElementById('modal-title').textContent = 'Edit Site';
+  document.getElementById('f-callsign').value = s.call_sign;
+  document.getElementById('f-callsign').disabled = true;
+  document.getElementById('f-name').value = s.name;
+  document.getElementById('f-lat').value = s.lat;
+  document.getElementById('f-lon').value = s.lon;
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+async function qrzFill() {
+  const cs = document.getElementById('f-callsign').value.trim().toUpperCase();
+  if (!cs) return;
+  const data = await fetch('/qrz/lookup/' + encodeURIComponent(cs)).then(r => r.json());
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('f-name').value = data.name || '';
+  document.getElementById('f-lat').value = data.lat || '';
+  document.getElementById('f-lon').value = data.lon || '';
+}
+
+document.getElementById('site-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    call_sign: document.getElementById('f-callsign').value.trim().toUpperCase(),
+    name: document.getElementById('f-name').value.trim(),
+    lat: parseFloat(document.getElementById('f-lat').value),
+    lon: parseFloat(document.getElementById('f-lon').value),
+  };
+  const url = editMode ? '/qrz/sites/' + encodeURIComponent(editCallsign) : '/qrz/sites';
+  const method = editMode ? 'PUT' : 'POST';
+  const resp = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (resp.ok) { closeModal(); loadSitesTable(); }
+  else { const d = await resp.json(); alert(d.error || 'Save failed'); }
+});
+
+// ── Map ──────────────────────────────────────────────────────
+async function initMap() {
+  if (!leafletMap) {
+    leafletMap = L.map('map').setView([51.5, -2.0], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(leafletMap);
   }
+  leafletMap.eachLayer(l => { if (l instanceof L.Marker) leafletMap.removeLayer(l); });
+  const sites = await fetch('/qrz/sites').then(r => r.json());
+  if (!sites || !sites.length) return;
+  const bounds = [];
+  sites.forEach(s => {
+    if (!s.lat || !s.lon) return;
+    const m = L.marker([s.lat, s.lon]).addTo(leafletMap);
+    m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name));
+    bounds.push([s.lat, s.lon]);
+  });
+  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
 
-function prefill(cs) {
-  input.value = cs;
-  form.dispatchEvent(new Event('submit'));
+// ── Helpers ──────────────────────────────────────────────────
+function fld(label, value) {
+  return '<div class="field"><span class="field-label">' + esc(label) + '</span><span class="field-value">' + esc(value) + '</span></div>';
 }
-
-function field(label, value) {
-  return '<div class="field"><span class="field-label">' + escHtml(label) +
-    '</span><span class="field-value">' + escHtml(value) + '</span></div>';
-}
-
-function escHtml(s) {
+function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-
-loadSites();
 </script>
 </body>
 </html>`
@@ -338,27 +345,96 @@ func main() {
 		port = "8091"
 	}
 
-	db.OpenDatabase()
 	client := qrz.NewClient(username, password)
+	db.OpenDatabase()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(indexHTML))
 	})
 
+	// GET /sites — list all; POST /sites — create
 	http.HandleFunc("/sites", func(w http.ResponseWriter, r *http.Request) {
-		sites, err := db.GetAllQTH()
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			sites, err := db.GetAllQTH()
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			if sites == nil {
+				sites = []db.QTH{}
+			}
+			json.NewEncoder(w).Encode(sites)
+
+		case http.MethodPost:
+			var body struct {
+				CallSign string  `json:"call_sign"`
+				Name     string  `json:"name"`
+				Lat      float32 `json:"lat"`
+				Lon      float32 `json:"lon"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
+				return
+			}
+			if err := db.AddQTH(body.CallSign, body.Name, body.Lat, body.Lon); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	// PUT /sites/{callsign} — update; DELETE /sites/{callsign} — delete
+	http.HandleFunc("/sites/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		cs := strings.TrimPrefix(r.URL.Path, "/sites/")
+		cs = strings.TrimSpace(cs)
+		if cs == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "callsign required"})
 			return
 		}
-		if sites == nil {
-			sites = []db.QTH{}
+
+		switch r.Method {
+		case http.MethodPut:
+			var body struct {
+				Name string  `json:"name"`
+				Lat  float32 `json:"lat"`
+				Lon  float32 `json:"lon"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
+				return
+			}
+			if err := db.UpdateQTH(cs, body.Name, body.Lat, body.Lon); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+
+		case http.MethodDelete:
+			if err := db.DeleteQTH(cs); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(sites)
 	})
 
 	http.HandleFunc("/lookup/", func(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +460,7 @@ func main() {
 		}
 
 		if result.Lat != "" && result.Lon != "" {
-			db.UpsertQTH(result.Callsign, result.Lat, result.Lon)
+			db.UpsertQTH(result.Callsign, result.Name, result.Lat, result.Lon)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -394,3 +470,4 @@ func main() {
 	log.Printf("qrzlook listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
+
