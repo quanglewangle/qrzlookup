@@ -138,7 +138,7 @@ const indexHTML = `<!DOCTYPE html>
     <button class="btn btn-success" onclick="openAddModal()">+ Add New</button>
   </div>
   <table>
-    <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th></th></tr></thead>
+    <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th>QNF</th><th>QNH (m)</th><th></th></tr></thead>
     <tbody id="sites-tbody"></tbody>
   </table>
 </div>
@@ -159,6 +159,8 @@ const indexHTML = `<!DOCTYPE html>
       <div class="form-group"><label>Name</label><input type="text" id="f-name"></div>
       <div class="form-group"><label>Latitude</label><input type="number" id="f-lat" step="any"></div>
       <div class="form-group"><label>Longitude</label><input type="number" id="f-lon" step="any"></div>
+      <div class="form-group"><label>QNF</label><input type="number" id="f-qnf" step="any" value="3"></div>
+      <div class="form-group"><label>QNH (m)</label><input type="number" id="f-qnh" step="any" placeholder="from QRZ"></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary" id="modal-save">Save</button>
@@ -220,15 +222,17 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
 // ── Sites table ──────────────────────────────────────────────
 async function loadSitesTable() {
   const tbody = document.getElementById('sites-tbody');
-  tbody.innerHTML = '<tr><td colspan="5"><div class="spinner"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7"><div class="spinner"></div></td></tr>';
   const sites = await fetch('/qrz/sites').then(r => r.json());
-  if (!sites || !sites.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
+  if (!sites || !sites.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
   tbody.innerHTML = sites.map(s =>
     '<tr>' +
     '<td><span class="cs-link" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
     '<td>' + esc(s.name) + '</td>' +
     '<td>' + s.lat.toFixed(4) + '</td>' +
     '<td>' + s.lon.toFixed(4) + '</td>' +
+    '<td>' + (s.qnf != null ? s.qnf : 3) + '</td>' +
+    '<td>' + (s.qnh != null ? s.qnh : '—') + '</td>' +
     '<td><div class="actions">' +
     '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
     '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
@@ -263,6 +267,8 @@ function openAddModal() {
   document.getElementById('f-name').value = '';
   document.getElementById('f-lat').value = '';
   document.getElementById('f-lon').value = '';
+  document.getElementById('f-qnf').value = '3';
+  document.getElementById('f-qnh').value = '';
   document.getElementById('modal').classList.add('open');
 }
 
@@ -274,6 +280,8 @@ function openEditModal(s) {
   document.getElementById('f-name').value = s.name;
   document.getElementById('f-lat').value = s.lat;
   document.getElementById('f-lon').value = s.lon;
+  document.getElementById('f-qnf').value = s.qnf != null ? s.qnf : 3;
+  document.getElementById('f-qnh').value = s.qnh != null ? s.qnh : '';
   document.getElementById('modal').classList.add('open');
 }
 
@@ -287,15 +295,19 @@ async function qrzFill() {
   document.getElementById('f-name').value = data.name || '';
   document.getElementById('f-lat').value = data.lat || '';
   document.getElementById('f-lon').value = data.lon || '';
+  document.getElementById('f-qnh').value = data.altm || '';
 }
 
 document.getElementById('site-form').addEventListener('submit', async e => {
   e.preventDefault();
+  const qnhVal = document.getElementById('f-qnh').value;
   const body = {
     call_sign: document.getElementById('f-callsign').value.trim().toUpperCase(),
     name: document.getElementById('f-name').value.trim(),
     lat: parseFloat(document.getElementById('f-lat').value),
     lon: parseFloat(document.getElementById('f-lon').value),
+    qnf: parseFloat(document.getElementById('f-qnf').value) || 3,
+    qnh: qnhVal !== '' ? parseFloat(qnhVal) : null,
   };
   const url = editMode ? '/qrz/sites/' + encodeURIComponent(editCallsign) : '/qrz/sites';
   const method = editMode ? 'PUT' : 'POST';
@@ -380,17 +392,22 @@ func main() {
 
 		case http.MethodPost:
 			var body struct {
-				CallSign string  `json:"call_sign"`
-				Name     string  `json:"name"`
-				Lat      float32 `json:"lat"`
-				Lon      float32 `json:"lon"`
+				CallSign string   `json:"call_sign"`
+				Name     string   `json:"name"`
+				Lat      float32  `json:"lat"`
+				Lon      float32  `json:"lon"`
+				QNF      float64  `json:"qnf"`
+				QNH      *float64 `json:"qnh"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
 				return
 			}
-			if err := db.AddQTH(body.CallSign, body.Name, body.Lat, body.Lon); err != nil {
+			if body.QNF == 0 {
+				body.QNF = 3
+			}
+			if err := db.AddQTH(body.CallSign, body.Name, body.Lat, body.Lon, body.QNF, body.QNH); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
@@ -417,16 +434,21 @@ func main() {
 		switch r.Method {
 		case http.MethodPut:
 			var body struct {
-				Name string  `json:"name"`
-				Lat  float32 `json:"lat"`
-				Lon  float32 `json:"lon"`
+				Name string   `json:"name"`
+				Lat  float32  `json:"lat"`
+				Lon  float32  `json:"lon"`
+				QNF  float64  `json:"qnf"`
+				QNH  *float64 `json:"qnh"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
 				return
 			}
-			if err := db.UpdateQTH(cs, body.Name, body.Lat, body.Lon); err != nil {
+			if body.QNF == 0 {
+				body.QNF = 3
+			}
+			if err := db.UpdateQTH(cs, body.Name, body.Lat, body.Lon, body.QNF, body.QNH); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
@@ -469,7 +491,7 @@ func main() {
 		}
 
 		if result.Lat != "" && result.Lon != "" {
-			db.UpsertQTH(result.Callsign, result.Name, result.Lat, result.Lon)
+			db.UpsertQTH(result.Callsign, result.Name, result.Lat, result.Lon, result.AltM)
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -36,6 +36,7 @@ type Result struct {
 	Grid     string `json:"grid,omitempty"`
 	Lat      string `json:"lat,omitempty"`
 	Lon      string `json:"lon,omitempty"`
+	AltM     string `json:"altm,omitempty"`
 }
 
 type qrzResponse struct {
@@ -59,6 +60,7 @@ type qrzCallsign struct {
 	Grid    string `xml:"grid"`
 	Lat     string `xml:"lat"`
 	Lon     string `xml:"lon"`
+	AltM    string `xml:"altm"`
 }
 
 func (c *Client) getSession() (string, error) {
@@ -163,5 +165,6 @@ func (c *Client) doLookup(session, callsign string) (*Result, error) {
 		Grid:     cs.Grid,
 		Lat:      cs.Lat,
 		Lon:      cs.Lon,
+		AltM:     cs.AltM,
 	}, nil
 }
