@@ -404,6 +404,7 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 </script>
+<footer style="margin-top:2rem;padding:0.5rem 1rem;text-align:center;font-size:0.7rem;color:#888;">A quanglewangle website &copy; 2026. Contains OS data &copy; Crown copyright and database right [2026]</footer>
 </body>
 </html>`
 
