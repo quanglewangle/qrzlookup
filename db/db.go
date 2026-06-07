@@ -1,6 +1,7 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"strconv"
@@ -22,6 +23,7 @@ func OpenDatabase() {
 		return
 	}
 	dbOpen = true
+	database.Exec(`ALTER TABLE qth ADD COLUMN IF NOT EXISTS site_type TEXT DEFAULT 'roc'`)
 }
 
 type QTH struct {
@@ -31,10 +33,11 @@ type QTH struct {
 	Lon      float32  `json:"lon"`
 	QNF      float64  `json:"qnf"`
 	QNH      *float64 `json:"qnh"`
+	SiteType string   `json:"site_type"`
 }
 
 func GetAllQTH() ([]QTH, error) {
-	rows, err := database.Query(`SELECT call_sign, COALESCE(name,''), lat, long, COALESCE(qnf, 3), qnh FROM qth ORDER BY call_sign`)
+	rows, err := database.Query(`SELECT call_sign, COALESCE(name,''), lat, long, COALESCE(qnf, 3), qnh, COALESCE(site_type,'roc') FROM qth ORDER BY call_sign`)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +47,7 @@ func GetAllQTH() ([]QTH, error) {
 	for rows.Next() {
 		var q QTH
 		var qnh sql.NullFloat64
-		if err := rows.Scan(&q.CallSign, &q.Name, &q.Lat, &q.Lon, &q.QNF, &qnh); err != nil {
+		if err := rows.Scan(&q.CallSign, &q.Name, &q.Lat, &q.Lon, &q.QNF, &qnh, &q.SiteType); err != nil {
 			return nil, err
 		}
 		if qnh.Valid {
@@ -53,6 +56,19 @@ func GetAllQTH() ([]QTH, error) {
 		result = append(result, q)
 	}
 	return result, nil
+}
+
+func AddPinSite(name string, lat, lon float32, qnh *float64) (string, error) {
+	b := make([]byte, 3)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	id := fmt.Sprintf("PIN-%06X", b)
+	_, err := database.Exec(
+		`INSERT INTO qth (call_sign, name, lat, long, qnf, qnh, site_type) VALUES ($1, $2, $3, $4, 3, $5, 'pin')`,
+		id, name, lat, lon, qnh,
+	)
+	return id, err
 }
 
 func UpsertQTH(callsign, name, latStr, lonStr, altmStr string) {

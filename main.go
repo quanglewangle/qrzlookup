@@ -101,6 +101,8 @@ const indexHTML = `<!DOCTYPE html>
   /* Map view */
   #view-map { padding: 0; }
   #map { height: calc(100vh - 52px); width: 100%; }
+  .pin-drop-btn { padding:6px 10px; background:white; border:2px solid #ccc; border-radius:6px; cursor:pointer; font-size:0.82rem; font-weight:600; box-shadow:0 1px 5px rgba(0,0,0,0.2); }
+  .pin-drop-btn.active { background:#22c55e; color:white; border-color:#16a34a; }
 
   /* Modal */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
@@ -171,6 +173,21 @@ const indexHTML = `<!DOCTYPE html>
   </div>
 </div>
 
+<div class="modal-overlay" id="pin-modal">
+  <div class="modal-box">
+    <h3>Name this pin</h3>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="pin-name" placeholder="e.g. Hill top" autocomplete="off">
+    </div>
+    <div id="pin-elev" style="font-size:0.82rem;color:#718096;margin-bottom:0.5rem;display:none"></div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" onclick="closePinModal()">Cancel</button>
+      <button type="button" class="btn btn-success" id="pin-save-btn" onclick="savePinSite()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Navigation ───────────────────────────────────────────────
 let leafletMap = null;
@@ -227,19 +244,23 @@ async function loadSitesTable() {
   tbody.innerHTML = '<tr><td colspan="7"><div class="spinner"></div></td></tr>';
   const sites = await fetch('/qrz/sites').then(r => r.json());
   if (!sites || !sites.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
-  tbody.innerHTML = sites.map(s =>
-    '<tr>' +
-    '<td><span class="cs-link" title="Look up and edit" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
-    '<td>' + esc(s.name) + '</td>' +
-    '<td>' + s.lat.toFixed(4) + '</td>' +
-    '<td>' + s.lon.toFixed(4) + '</td>' +
-    '<td>' + (s.qnf != null ? s.qnf : 3) + '</td>' +
-    '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
-    '<td><div class="actions">' +
-    '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
-    '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
-    '</div></td></tr>'
-  ).join('');
+  tbody.innerHTML = sites.map(s => {
+    const isPinSite = s.site_type === 'pin';
+    const csCell = isPinSite
+      ? '<td><span style="color:#16a34a;font-weight:700">&#128205; pin</span></td>'
+      : '<td><span class="cs-link" title="Look up and edit" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>';
+    return '<tr>' +
+      csCell +
+      '<td>' + esc(s.name) + '</td>' +
+      '<td>' + s.lat.toFixed(4) + '</td>' +
+      '<td>' + s.lon.toFixed(4) + '</td>' +
+      '<td>' + (s.qnf != null ? s.qnf : 3) + '</td>' +
+      '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
+      '<td><div class="actions">' +
+      '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
+      '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
+      '</div></td></tr>';
+  }).join('');
 }
 
 async function deleteSite(cs) {
@@ -322,6 +343,47 @@ document.getElementById('site-form').addEventListener('submit', async e => {
 let clusterGroup = null;
 let losLayer = null;
 let allSitesData = [];
+let pinDropMode = false;
+let pinDropBtn = null;
+let pendingPinLatLng = null;
+
+const greenPinIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:14px;height:14px;border-radius:50%;background:#22c55e;border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,0.5)"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+  popupAnchor: [0, -8],
+});
+
+async function loadMapSites(fitBounds) {
+  clearLoS();
+  if (clusterGroup) leafletMap.removeLayer(clusterGroup);
+  clusterGroup = L.markerClusterGroup();
+  const sites = await fetch('/qrz/sites').then(r => r.json());
+  if (!sites || !sites.length) return;
+  allSitesData = sites;
+  const bounds = [];
+  sites.forEach(s => {
+    if (!s.lat || !s.lon) return;
+    const isPinSite = s.site_type === 'pin';
+    const m = isPinSite ? L.marker([s.lat, s.lon], {icon: greenPinIcon}) : L.marker([s.lat, s.lon]);
+    const hDesc = (s.qnh != null ? Math.round(s.qnh) + ' m ASL' : 'ASL unknown') +
+                  ' + ' + (s.qnf != null ? s.qnf : 3) + ' m ant';
+    if (isPinSite) {
+      m.bindPopup('<strong>' + esc(s.name) + '</strong>' +
+                  '<br><small style="color:#16a34a;font-weight:600">&#128205; pin</small>' +
+                  '<br><small style="color:#718096">' + hDesc + '</small>');
+    } else {
+      m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name) +
+                  '<br><small style="color:#718096">' + hDesc + '</small>');
+    }
+    m.on('click', function() { showLoS(s); });
+    clusterGroup.addLayer(m);
+    bounds.push([s.lat, s.lon]);
+  });
+  leafletMap.addLayer(clusterGroup);
+  if (fitBounds && bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
+}
 
 async function initMap() {
   if (!leafletMap) {
@@ -344,32 +406,73 @@ async function initMap() {
       }
     });
     new LosCtrl({position: 'bottomright'}).addTo(leafletMap);
-    leafletMap.on('click', clearLoS);
+
+    const PinCtrl = L.Control.extend({
+      onAdd: function() {
+        pinDropBtn = L.DomUtil.create('button', 'pin-drop-btn');
+        pinDropBtn.innerHTML = '&#128205; Drop pin';
+        L.DomEvent.on(pinDropBtn, 'click', function(e) {
+          L.DomEvent.stopPropagation(e);
+          pinDropMode = !pinDropMode;
+          pinDropBtn.classList.toggle('active', pinDropMode);
+          leafletMap.getContainer().style.cursor = pinDropMode ? 'crosshair' : '';
+        });
+        return pinDropBtn;
+      }
+    });
+    new PinCtrl({position: 'topleft'}).addTo(leafletMap);
+
+    leafletMap.on('click', function(e) {
+      if (pinDropMode) openPinModal(e.latlng);
+      else clearLoS();
+    });
   }
 
-  clearLoS();
-  if (clusterGroup) { leafletMap.removeLayer(clusterGroup); }
-  clusterGroup = L.markerClusterGroup();
-
-  const sites = await fetch('/qrz/sites').then(r => r.json());
-  if (!sites || !sites.length) return;
-  allSitesData = sites;
-
-  const bounds = [];
-  sites.forEach(s => {
-    if (!s.lat || !s.lon) return;
-    const m = L.marker([s.lat, s.lon]);
-    const hDesc = (s.qnh != null ? Math.round(s.qnh) + ' m ASL' : 'ASL unknown') +
-                  ' + ' + (s.qnf != null ? s.qnf : 3) + ' m ant';
-    m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name) +
-                '<br><small style="color:#718096">' + hDesc + '</small>');
-    m.on('click', function() { showLoS(s); });
-    clusterGroup.addLayer(m);
-    bounds.push([s.lat, s.lon]);
-  });
-  leafletMap.addLayer(clusterGroup);
-  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
+  await loadMapSites(true);
 }
+
+// ── Pin drop ──────────────────────────────────────────────────
+function openPinModal(latlng) {
+  pendingPinLatLng = latlng;
+  document.getElementById('pin-name').value = '';
+  document.getElementById('pin-elev').style.display = 'none';
+  document.getElementById('pin-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pin-name').focus(), 50);
+}
+
+function closePinModal() {
+  document.getElementById('pin-modal').classList.remove('open');
+  pendingPinLatLng = null;
+  pinDropMode = false;
+  if (pinDropBtn) pinDropBtn.classList.remove('active');
+  if (leafletMap) leafletMap.getContainer().style.cursor = '';
+}
+
+async function savePinSite() {
+  const name = document.getElementById('pin-name').value.trim();
+  if (!name) { document.getElementById('pin-name').focus(); return; }
+  const btn = document.getElementById('pin-save-btn');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/qrz/sites/pin', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name, lat: pendingPinLatLng.lat, lon: pendingPinLatLng.lng }),
+    });
+    if (resp.ok) {
+      closePinModal();
+      loadMapSites(false);
+    } else {
+      const d = await resp.json();
+      alert(d.error || 'Save failed');
+    }
+  } finally { btn.disabled = false; }
+}
+
+document.getElementById('pin-name').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') savePinSite();
+  if (e.key === 'Escape') closePinModal();
+});
 
 // ── Line of sight ─────────────────────────────────────────────
 async function showLoS(clicked) {
@@ -526,6 +629,44 @@ func main() {
 				float64(s.Lat), float64(s.Lon), h2)
 		}
 		json.NewEncoder(w).Encode(result)
+	})
+
+	// POST /sites/pin — create a pin site from dropped map marker
+	http.HandleFunc("/sites/pin", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Name string  `json:"name"`
+			Lat  float32 `json:"lat"`
+			Lon  float32 `json:"lon"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
+			return
+		}
+		if body.Name == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "name required"})
+			return
+		}
+		var qnh *float64
+		if t50Dir != "" {
+			if elev, err := terrain50.ElevationAt(t50Dir, float64(body.Lat), float64(body.Lon)); err == nil {
+				qnh = &elev
+			}
+		}
+		id, err := db.AddPinSite(body.Name, body.Lat, body.Lon, qnh)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"status": "created", "id": id})
 	})
 
 	// GET /sites — list all; POST /sites — create
