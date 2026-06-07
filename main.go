@@ -5,10 +5,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/quanglewangle/qrzlook/db"
 	"github.com/quanglewangle/qrzlook/qrz"
+	"github.com/quanglewangle/qrzlook/terrain50"
 )
 
 const indexHTML = `<!DOCTYPE html>
@@ -366,6 +368,8 @@ func main() {
 		port = "8091"
 	}
 
+	t50Dir := os.Getenv("TERRAIN50_DIR")
+
 	client := qrz.NewClient(username, password)
 	db.OpenDatabase()
 
@@ -491,6 +495,15 @@ func main() {
 		}
 
 		if result.Lat != "" && result.Lon != "" {
+			if result.AltM == "" && t50Dir != "" {
+				lat, err1 := strconv.ParseFloat(result.Lat, 64)
+				lon, err2 := strconv.ParseFloat(result.Lon, 64)
+				if err1 == nil && err2 == nil {
+					if elev, err := terrain50.ElevationAt(t50Dir, lat, lon); err == nil {
+						result.AltM = strconv.FormatFloat(elev, 'f', 1, 64)
+					}
+				}
+			}
 			db.UpsertQTH(result.Callsign, result.Name, result.Lat, result.Lon, result.AltM)
 		}
 
