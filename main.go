@@ -118,7 +118,7 @@ const indexHTML = `<!DOCTYPE html>
 
 <nav>
   <span class="brand">ROC Locations</span>
-  <a href="#" class="active" data-view="lookup">Lookup</a>
+  <a href="#" class="active" data-view="lookup" title="Look up and edit">Lookup</a>
   <a href="#" data-view="sites">Sites</a>
   <a href="#" data-view="map">Map</a>
 </nav>
@@ -138,7 +138,7 @@ const indexHTML = `<!DOCTYPE html>
     <button class="btn btn-success" onclick="openAddModal()">+ Add New</button>
   </div>
   <table>
-    <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th>QNF</th><th>QNH (m)</th><th></th></tr></thead>
+    <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th title="Antenna height above ground (m)">QNF</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
     <tbody id="sites-tbody"></tbody>
   </table>
 </div>
@@ -159,8 +159,8 @@ const indexHTML = `<!DOCTYPE html>
       <div class="form-group"><label>Name</label><input type="text" id="f-name"></div>
       <div class="form-group"><label>Latitude</label><input type="number" id="f-lat" step="any"></div>
       <div class="form-group"><label>Longitude</label><input type="number" id="f-lon" step="any"></div>
-      <div class="form-group"><label>QNF</label><input type="number" id="f-qnf" step="any" value="3"></div>
-      <div class="form-group"><label>QNH (m)</label><input type="number" id="f-qnh" step="any" placeholder="from QRZ"></div>
+      <div class="form-group"><label title="Antenna height above ground (m)">QNF</label><input type="number" id="f-qnf" step="any" value="3"></div>
+      <div class="form-group"><label title="Height above sea level (m)">QNH (m)</label><input type="number" id="f-qnh" step="any" placeholder="from QRZ"></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary" id="modal-save">Save</button>
@@ -227,7 +227,7 @@ async function loadSitesTable() {
   if (!sites || !sites.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
   tbody.innerHTML = sites.map(s =>
     '<tr>' +
-    '<td><span class="cs-link" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
+    '<td><span class="cs-link" title="Look up and edit" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
     '<td>' + esc(s.name) + '</td>' +
     '<td>' + s.lat.toFixed(4) + '</td>' +
     '<td>' + s.lon.toFixed(4) + '</td>' +
