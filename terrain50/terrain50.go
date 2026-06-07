@@ -269,6 +269,53 @@ func wgs84ToBNG(latDeg, lonDeg float64) (float64, float64) {
 	return easting, northing
 }
 
+// HaversineM returns the great-circle distance in metres between two WGS84 points.
+func HaversineM(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371000.0
+	r := math.Pi / 180
+	dLat := (lat2 - lat1) * r
+	dLon := (lon2 - lon1) * r
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*r)*math.Cos(lat2*r)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	return R * 2 * math.Asin(math.Sqrt(a))
+}
+
+// LoS reports whether two antenna tips have radio line-of-sight.
+// lat/lon in WGS84 degrees; h1/h2 = total height above sea level in metres (QNH + QNF).
+// Samples terrain every 100 m. Points outside the GB grid are skipped (benefit of doubt).
+// Uses 4/3 effective Earth radius to model atmospheric refraction.
+func LoS(dataDir string, lat1, lon1, h1, lat2, lon2, h2 float64) bool {
+	const (
+		sampleM = 100.0
+		rEff    = 4.0 / 3.0 * 6371000.0
+	)
+	D := HaversineM(lat1, lon1, lat2, lon2)
+	if D < 1 {
+		return true
+	}
+	n := int(D/sampleM) + 1
+	if n < 2 {
+		n = 2
+	}
+	for i := 1; i < n; i++ {
+		t := float64(i) / float64(n)
+		lat := lat1 + t*(lat2-lat1)
+		lon := lon1 + t*(lon2-lon1)
+		// Height of the antenna-tip line above the geoid at fraction t
+		lineH := h1 + t*(h2-h1)
+		// How far the geoid surface rises above the chord at this fraction
+		bulge := D * D * t * (1 - t) / (2 * rEff)
+		elev, err := ElevationAt(dataDir, lat, lon)
+		if err != nil {
+			continue // outside GB or no data — assume clear
+		}
+		if elev > lineH-bulge {
+			return false
+		}
+	}
+	return true
+}
+
 // meridionalArc computes the meridional arc from phi0 to phi using the OS series formula.
 func meridionalArc(b, f0, phi0, phi, n float64) float64 {
 	n2 := n * n

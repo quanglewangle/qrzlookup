@@ -234,7 +234,7 @@ async function loadSitesTable() {
     '<td>' + s.lat.toFixed(4) + '</td>' +
     '<td>' + s.lon.toFixed(4) + '</td>' +
     '<td>' + (s.qnf != null ? s.qnf : 3) + '</td>' +
-    '<td>' + (s.qnh != null ? s.qnh : '—') + '</td>' +
+    '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
     '<td><div class="actions">' +
     '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
     '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
@@ -283,7 +283,7 @@ function openEditModal(s) {
   document.getElementById('f-lat').value = s.lat;
   document.getElementById('f-lon').value = s.lon;
   document.getElementById('f-qnf').value = s.qnf != null ? s.qnf : 3;
-  document.getElementById('f-qnh').value = s.qnh != null ? s.qnh : '';
+  document.getElementById('f-qnh').value = s.qnh != null ? Math.round(s.qnh) : '';
   document.getElementById('modal').classList.add('open');
 }
 
@@ -339,7 +339,7 @@ async function initMap() {
           'Click a marker to show LoS<br>to sites within 100 km<br>' +
           '<span style="color:#22c55e;font-weight:700">&#9135;&#9135;</span> Clear &nbsp;' +
           '<span style="color:#ef4444;font-weight:700">&#xFE31;&#xFE31;</span> Blocked<br>' +
-          '<span style="color:#999;font-size:0.71rem">Height = QNH + QNF<br>Earth curvature + refraction</span>';
+          '<span style="color:#999;font-size:0.71rem">Height = QNH + QNF<br>Terrain profile + refraction</span>';
         return d;
       }
     });
@@ -359,7 +359,7 @@ async function initMap() {
   sites.forEach(s => {
     if (!s.lat || !s.lon) return;
     const m = L.marker([s.lat, s.lon]);
-    const hDesc = (s.qnh != null ? s.qnh.toFixed(1) + ' m ASL' : 'ASL unknown') +
+    const hDesc = (s.qnh != null ? Math.round(s.qnh) + ' m ASL' : 'ASL unknown') +
                   ' + ' + (s.qnf != null ? s.qnf : 3) + ' m ant';
     m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name) +
                 '<br><small style="color:#718096">' + hDesc + '</small>');
@@ -372,34 +372,24 @@ async function initMap() {
 }
 
 // ── Line of sight ─────────────────────────────────────────────
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371, r = Math.PI / 180;
-  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-}
-
-function radioHorizonKm(heightM) {
-  return heightM > 0 ? Math.sqrt(2 * (4/3) * 6371 * heightM / 1000) : 0;
-}
-
-function showLoS(clicked) {
+async function showLoS(clicked) {
   clearLoS();
   if (!losLayer) losLayer = L.layerGroup().addTo(leafletMap);
-  allSitesData.forEach(s => {
-    if (s.call_sign === clicked.call_sign || !s.lat || !s.lon) return;
-    const dist = haversineKm(clicked.lat, clicked.lon, s.lat, s.lon);
-    if (dist > 100) return;
-    const h1 = (clicked.qnh || 0) + (clicked.qnf || 3);
-    const h2 = (s.qnh || 0) + (s.qnf || 3);
-    const clear = radioHorizonKm(h1) + radioHorizonKm(h2) >= dist;
-    L.polyline([[clicked.lat, clicked.lon], [s.lat, s.lon]], {
-      color:     clear ? '#22c55e' : '#ef4444',
-      weight:    2,
-      opacity:   clear ? 0.85 : 0.55,
-      dashArray: clear ? null : '8 6',
-    }).addTo(losLayer);
-  });
+  try {
+    const result = await fetch('/qrz/sites/los/' + encodeURIComponent(clicked.call_sign)).then(r => r.json());
+    clearLoS();
+    if (!losLayer) losLayer = L.layerGroup().addTo(leafletMap);
+    Object.entries(result).forEach(([cs, clear]) => {
+      const s = allSitesData.find(x => x.call_sign === cs);
+      if (!s) return;
+      L.polyline([[clicked.lat, clicked.lon], [s.lat, s.lon]], {
+        color:     clear ? '#22c55e' : '#ef4444',
+        weight:    2,
+        opacity:   clear ? 0.85 : 0.55,
+        dashArray: clear ? null : '8 6',
+      }).addTo(losLayer);
+    });
+  } catch(e) { /* ignore */ }
 }
 
 function clearLoS() {
@@ -473,6 +463,68 @@ func main() {
 			}
 		}
 		json.NewEncoder(w).Encode(map[string]int{"updated": updated, "skipped": skipped})
+	})
+
+	// GET /sites/los/{callsign} — terrain-profiled LoS to all sites within 100 km
+	http.HandleFunc("/sites/los/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if t50Dir == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "terrain data not configured"})
+			return
+		}
+		cs := strings.TrimPrefix(r.URL.Path, "/sites/los/")
+		if cs == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "callsign required"})
+			return
+		}
+		sites, err := db.GetAllQTH()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		var src *db.QTH
+		for i := range sites {
+			if strings.EqualFold(sites[i].CallSign, cs) {
+				src = &sites[i]
+				break
+			}
+		}
+		if src == nil {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "site not found"})
+			return
+		}
+		qnh1 := 0.0
+		if src.QNH != nil {
+			qnh1 = *src.QNH
+		}
+		h1 := qnh1 + src.QNF
+		result := map[string]bool{}
+		for _, s := range sites {
+			if s.CallSign == src.CallSign || (s.Lat == 0 && s.Lon == 0) {
+				continue
+			}
+			dist := terrain50.HaversineM(float64(src.Lat), float64(src.Lon), float64(s.Lat), float64(s.Lon))
+			if dist > 100000 {
+				continue
+			}
+			qnh2 := 0.0
+			if s.QNH != nil {
+				qnh2 = *s.QNH
+			}
+			h2 := qnh2 + s.QNF
+			result[s.CallSign] = terrain50.LoS(t50Dir,
+				float64(src.Lat), float64(src.Lon), h1,
+				float64(s.Lat), float64(s.Lon), h2)
+		}
+		json.NewEncoder(w).Encode(result)
 	})
 
 	// GET /sites — list all; POST /sites — create
