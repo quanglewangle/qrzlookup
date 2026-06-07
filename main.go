@@ -320,6 +320,8 @@ document.getElementById('site-form').addEventListener('submit', async e => {
 
 // ── Map ──────────────────────────────────────────────────────
 let clusterGroup = null;
+let losLayer = null;
+let allSitesData = [];
 
 async function initMap() {
   if (!leafletMap) {
@@ -327,22 +329,81 @@ async function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(leafletMap);
+
+    const LosCtrl = L.Control.extend({
+      onAdd: function() {
+        const d = L.DomUtil.create('div');
+        d.style.cssText = 'background:white;padding:8px 12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.2);font-size:0.76rem;line-height:1.7;pointer-events:none;';
+        d.innerHTML =
+          '<strong style="font-size:0.82rem">Radio line of sight</strong><br>' +
+          'Click a marker to show LoS<br>to sites within 100 km<br>' +
+          '<span style="color:#22c55e;font-weight:700">&#9135;&#9135;</span> Clear &nbsp;' +
+          '<span style="color:#ef4444;font-weight:700">&#xFE31;&#xFE31;</span> Blocked<br>' +
+          '<span style="color:#999;font-size:0.71rem">Height = QNH + QNF<br>Earth curvature + refraction</span>';
+        return d;
+      }
+    });
+    new LosCtrl({position: 'bottomright'}).addTo(leafletMap);
+    leafletMap.on('click', clearLoS);
   }
+
+  clearLoS();
   if (clusterGroup) { leafletMap.removeLayer(clusterGroup); }
   clusterGroup = L.markerClusterGroup();
 
   const sites = await fetch('/qrz/sites').then(r => r.json());
   if (!sites || !sites.length) return;
+  allSitesData = sites;
+
   const bounds = [];
   sites.forEach(s => {
     if (!s.lat || !s.lon) return;
     const m = L.marker([s.lat, s.lon]);
-    m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name));
+    const hDesc = (s.qnh != null ? s.qnh.toFixed(1) + ' m ASL' : 'ASL unknown') +
+                  ' + ' + (s.qnf != null ? s.qnf : 3) + ' m ant';
+    m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name) +
+                '<br><small style="color:#718096">' + hDesc + '</small>');
+    m.on('click', function() { showLoS(s); });
     clusterGroup.addLayer(m);
     bounds.push([s.lat, s.lon]);
   });
   leafletMap.addLayer(clusterGroup);
   if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
+}
+
+// ── Line of sight ─────────────────────────────────────────────
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+function radioHorizonKm(heightM) {
+  return heightM > 0 ? Math.sqrt(2 * (4/3) * 6371 * heightM / 1000) : 0;
+}
+
+function showLoS(clicked) {
+  clearLoS();
+  if (!losLayer) losLayer = L.layerGroup().addTo(leafletMap);
+  allSitesData.forEach(s => {
+    if (s.call_sign === clicked.call_sign || !s.lat || !s.lon) return;
+    const dist = haversineKm(clicked.lat, clicked.lon, s.lat, s.lon);
+    if (dist > 100) return;
+    const h1 = (clicked.qnh || 0) + (clicked.qnf || 3);
+    const h2 = (s.qnh || 0) + (s.qnf || 3);
+    const clear = radioHorizonKm(h1) + radioHorizonKm(h2) >= dist;
+    L.polyline([[clicked.lat, clicked.lon], [s.lat, s.lon]], {
+      color:     clear ? '#22c55e' : '#ef4444',
+      weight:    2,
+      opacity:   clear ? 0.85 : 0.55,
+      dashArray: clear ? null : '8 6',
+    }).addTo(losLayer);
+  });
+}
+
+function clearLoS() {
+  if (losLayer) losLayer.clearLayers();
 }
 
 // ── Helpers ──────────────────────────────────────────────────
