@@ -24,6 +24,30 @@ func OpenDatabase() {
 	dbOpen = true
 }
 
+type QTH struct {
+	CallSign string  `json:"call_sign"`
+	Lat      float32 `json:"lat"`
+	Lon      float32 `json:"lon"`
+}
+
+func GetAllQTH() ([]QTH, error) {
+	rows, err := database.Query(`SELECT call_sign, lat, long FROM qth ORDER BY call_sign`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []QTH
+	for rows.Next() {
+		var q QTH
+		if err := rows.Scan(&q.CallSign, &q.Lat, &q.Lon); err != nil {
+			return nil, err
+		}
+		result = append(result, q)
+	}
+	return result, nil
+}
+
 func UpsertQTH(callsign, latStr, lonStr string) {
 	if !dbOpen {
 		return

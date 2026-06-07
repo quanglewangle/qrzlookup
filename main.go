@@ -85,6 +85,7 @@ const indexHTML = `<!DOCTYPE html>
   #result {
     width: 100%;
     max-width: 480px;
+    margin-bottom: 2rem;
   }
 
   .card {
@@ -166,6 +167,56 @@ const indexHTML = `<!DOCTYPE html>
     margin: 1rem auto;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  #sites-section {
+    width: 100%;
+    max-width: 480px;
+  }
+
+  #sites-section h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .sites-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    font-size: 0.9rem;
+  }
+
+  .sites-table th {
+    background: #edf2f7;
+    color: #718096;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.6rem 1rem;
+    text-align: left;
+  }
+
+  .sites-table td {
+    padding: 0.6rem 1rem;
+    border-top: 1px solid #f0f4f8;
+    color: #2d3748;
+  }
+
+  .sites-table tr:hover td { background: #f7fafc; }
+
+  .sites-table .cs {
+    font-weight: 700;
+    color: #2b6cb0;
+    cursor: pointer;
+  }
+  .sites-table .cs:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -178,6 +229,11 @@ const indexHTML = `<!DOCTYPE html>
 </form>
 
 <div id="result"></div>
+
+<div id="sites-section">
+  <h2>Known Sites</h2>
+  <div id="sites"></div>
+</div>
 
 <script>
 const form = document.getElementById('form');
@@ -216,6 +272,8 @@ form.addEventListener('submit', async e => {
         '</div>' +
         (mapURL ? '<a class="map-link" href="' + mapURL + '" target="_blank" rel="noopener">View on map ↗</a>' : '') +
         '</div>';
+
+      loadSites();
     }
   } catch (err) {
     result.innerHTML = '<div class="error">Request failed. Please try again.</div>';
@@ -223,6 +281,36 @@ form.addEventListener('submit', async e => {
     btn.disabled = false;
   }
 });
+
+async function loadSites() {
+  try {
+    const resp = await fetch('/qrz/sites');
+    const sites = await resp.json();
+    const el = document.getElementById('sites');
+
+    if (!sites || sites.length === 0) {
+      el.innerHTML = '<p style="color:#a0aec0;font-size:0.9rem">No sites yet.</p>';
+      return;
+    }
+
+    el.innerHTML = '<table class="sites-table"><thead><tr>' +
+      '<th>Callsign</th><th>Lat</th><th>Lon</th>' +
+      '</tr></thead><tbody>' +
+      sites.map(s =>
+        '<tr><td class="cs" onclick="prefill(\'' + escHtml(s.call_sign) + '\')">' + escHtml(s.call_sign) + '</td>' +
+        '<td>' + s.lat.toFixed(4) + '</td>' +
+        '<td>' + s.lon.toFixed(4) + '</td></tr>'
+      ).join('') +
+      '</tbody></table>';
+  } catch (e) {
+    document.getElementById('sites').innerHTML = '';
+  }
+}
+
+function prefill(cs) {
+  input.value = cs;
+  form.dispatchEvent(new Event('submit'));
+}
 
 function field(label, value) {
   return '<div class="field"><span class="field-label">' + escHtml(label) +
@@ -232,6 +320,8 @@ function field(label, value) {
 function escHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+loadSites();
 </script>
 </body>
 </html>`
@@ -254,6 +344,21 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(indexHTML))
+	})
+
+	http.HandleFunc("/sites", func(w http.ResponseWriter, r *http.Request) {
+		sites, err := db.GetAllQTH()
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		if sites == nil {
+			sites = []db.QTH{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sites)
 	})
 
 	http.HandleFunc("/lookup/", func(w http.ResponseWriter, r *http.Request) {
