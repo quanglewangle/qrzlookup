@@ -18,7 +18,10 @@ const indexHTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ROC Locations</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
@@ -302,6 +305,8 @@ document.getElementById('site-form').addEventListener('submit', async e => {
 });
 
 // ── Map ──────────────────────────────────────────────────────
+let clusterGroup = null;
+
 async function initMap() {
   if (!leafletMap) {
     leafletMap = L.map('map').setView([51.5, -2.0], 6);
@@ -309,16 +314,20 @@ async function initMap() {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(leafletMap);
   }
-  leafletMap.eachLayer(l => { if (l instanceof L.Marker) leafletMap.removeLayer(l); });
+  if (clusterGroup) { leafletMap.removeLayer(clusterGroup); }
+  clusterGroup = L.markerClusterGroup();
+
   const sites = await fetch('/qrz/sites').then(r => r.json());
   if (!sites || !sites.length) return;
   const bounds = [];
   sites.forEach(s => {
     if (!s.lat || !s.lon) return;
-    const m = L.marker([s.lat, s.lon]).addTo(leafletMap);
+    const m = L.marker([s.lat, s.lon]);
     m.bindPopup('<strong>' + esc(s.call_sign) + '</strong><br>' + esc(s.name));
+    clusterGroup.addLayer(m);
     bounds.push([s.lat, s.lon]);
   });
+  leafletMap.addLayer(clusterGroup);
   if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
 
