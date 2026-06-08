@@ -13,6 +13,14 @@ import (
 	"github.com/quanglewangle/qrzlook/terrain50"
 )
 
+var buildHash = "dev"
+
+type losEntry struct {
+	Clear  bool    `json:"clear"`
+	ObsLat float64 `json:"obs_lat,omitempty"`
+	ObsLon float64 `json:"obs_lon,omitempty"`
+}
+
 const indexHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -495,15 +503,21 @@ async function showLoS(clicked) {
     const result = await fetch('/qrz/sites/los/' + encodeURIComponent(clicked.call_sign)).then(r => r.json());
     clearLoS();
     if (!losLayer) losLayer = L.layerGroup().addTo(leafletMap);
-    Object.entries(result).forEach(([cs, clear]) => {
+    Object.entries(result).forEach(([cs, entry]) => {
       const s = allSitesData.find(x => x.call_sign === cs);
       if (!s) return;
-      L.polyline([[clicked.lat, clicked.lon], [s.lat, s.lon]], {
-        color:     clear ? '#22c55e' : '#ef4444',
-        weight:    2,
-        opacity:   clear ? 0.85 : 0.55,
-        dashArray: clear ? null : '8 6',
-      }).addTo(losLayer);
+      if (entry.clear) {
+        L.polyline([[clicked.lat, clicked.lon], [s.lat, s.lon]], {
+          color: '#22c55e', weight: 2, opacity: 0.85,
+        }).addTo(losLayer);
+      } else {
+        L.polyline([[clicked.lat, clicked.lon], [entry.obs_lat, entry.obs_lon]], {
+          color: '#ef4444', weight: 2, opacity: 0.85,
+        }).addTo(losLayer);
+        L.polyline([[entry.obs_lat, entry.obs_lon], [s.lat, s.lon]], {
+          color: '#555', weight: 2, opacity: 0.35,
+        }).addTo(losLayer);
+      }
     });
   } catch(e) { /* ignore */ }
 }
@@ -520,7 +534,7 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 </script>
-<footer style="margin-top:2rem;padding:0.5rem 1rem;text-align:center;font-size:0.7rem;color:#888;">A quanglewangle website &copy; 2026. Contains OS data &copy; Crown copyright and database right [2026]</footer>
+<footer style="margin-top:2rem;padding:0.5rem 1rem;text-align:center;font-size:0.7rem;color:#888;">A quanglewangle website &copy; 2026. Contains OS data &copy; Crown copyright and database right [2026] &mdash; build {{BUILD}}</footer>
 </body>
 </html>`
 
@@ -543,7 +557,7 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(indexHTML))
+		w.Write([]byte(strings.Replace(indexHTML, "{{BUILD}}", buildHash, 1)))
 	})
 
 	// POST /sites/refresh-qnh — populate QNH for all sites from terrain50 (no QRZ call)
@@ -623,7 +637,7 @@ func main() {
 			qnh1 = *src.QNH
 		}
 		h1 := qnh1 + src.QNF
-		result := map[string]bool{}
+		result := map[string]losEntry{}
 		for _, s := range sites {
 			if s.CallSign == src.CallSign || (s.Lat == 0 && s.Lon == 0) {
 				continue
@@ -637,9 +651,14 @@ func main() {
 				qnh2 = *s.QNH
 			}
 			h2 := qnh2 + s.QNF
-			result[s.CallSign] = terrain50.LoS(t50Dir,
+			r := terrain50.LoSCheck(t50Dir,
 				float64(src.Lat), float64(src.Lon), h1,
 				float64(s.Lat), float64(s.Lon), h2)
+			if r.Clear {
+				result[s.CallSign] = losEntry{Clear: true}
+			} else {
+				result[s.CallSign] = losEntry{ObsLat: r.ObsLat, ObsLon: r.ObsLon}
+			}
 		}
 		json.NewEncoder(w).Encode(result)
 	})

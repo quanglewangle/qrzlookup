@@ -280,18 +280,30 @@ func HaversineM(lat1, lon1, lat2, lon2 float64) float64 {
 	return R * 2 * math.Asin(math.Sqrt(a))
 }
 
+// LoSResult holds the outcome of a terrain line-of-sight check.
+type LoSResult struct {
+	Clear  bool
+	ObsLat float64 // WGS84 latitude of first obstruction; zero when Clear
+	ObsLon float64 // WGS84 longitude of first obstruction; zero when Clear
+}
+
 // LoS reports whether two antenna tips have radio line-of-sight.
 // lat/lon in WGS84 degrees; h1/h2 = total height above sea level in metres (QNH + QNF).
 // Samples terrain every 100 m. Points outside the GB grid are skipped (benefit of doubt).
 // Uses 4/3 effective Earth radius to model atmospheric refraction.
 func LoS(dataDir string, lat1, lon1, h1, lat2, lon2, h2 float64) bool {
+	return LoSCheck(dataDir, lat1, lon1, h1, lat2, lon2, h2).Clear
+}
+
+// LoSCheck is like LoS but also returns the WGS84 coordinates of the first terrain obstruction.
+func LoSCheck(dataDir string, lat1, lon1, h1, lat2, lon2, h2 float64) LoSResult {
 	const (
 		sampleM = 100.0
 		rEff    = 4.0 / 3.0 * 6371000.0
 	)
 	D := HaversineM(lat1, lon1, lat2, lon2)
 	if D < 1 {
-		return true
+		return LoSResult{Clear: true}
 	}
 	n := int(D/sampleM) + 1
 	if n < 2 {
@@ -301,19 +313,17 @@ func LoS(dataDir string, lat1, lon1, h1, lat2, lon2, h2 float64) bool {
 		t := float64(i) / float64(n)
 		lat := lat1 + t*(lat2-lat1)
 		lon := lon1 + t*(lon2-lon1)
-		// Height of the antenna-tip line above the geoid at fraction t
 		lineH := h1 + t*(h2-h1)
-		// How far the geoid surface rises above the chord at this fraction
 		bulge := D * D * t * (1 - t) / (2 * rEff)
 		elev, err := ElevationAt(dataDir, lat, lon)
 		if err != nil {
 			continue // outside GB or no data — assume clear
 		}
 		if elev > lineH-bulge {
-			return false
+			return LoSResult{Clear: false, ObsLat: lat, ObsLon: lon}
 		}
 	}
-	return true
+	return LoSResult{Clear: true}
 }
 
 // meridionalArc computes the meridional arc from phi0 to phi using the OS series formula.
