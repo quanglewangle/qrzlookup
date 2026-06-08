@@ -220,8 +220,6 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
       res.innerHTML = '<div class="error-box">' + esc(data.error) + '</div>';
     } else {
       const loc = [data.city, data.state, data.country].filter(Boolean).join(', ');
-      const mapURL = data.lat && data.lon
-        ? 'https://www.openstreetmap.org/?mlat=' + data.lat + '&mlon=' + data.lon + '&zoom=10' : null;
       res.innerHTML = '<div class="card">' +
         '<div class="callsign-big">' + esc(data.callsign) + '</div>' +
         '<div class="name-big">' + esc(data.name || '—') + '</div>' +
@@ -231,7 +229,7 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
         (data.grid ? fld('Grid', data.grid) : '') +
         (data.lat && data.lon ? fld('Lat / Lon', data.lat + ', ' + data.lon) : '') +
         '</div>' +
-        (mapURL ? '<a class="map-link" href="' + mapURL + '" target="_blank" rel="noopener">View on map ↗</a>' : '') +
+        (data.lat && data.lon ? '<a class="map-link" href="#" data-cs="' + esc(data.callsign) + '" data-lat="' + data.lat + '" data-lon="' + data.lon + '" onclick="goToMapLoS(this.dataset.cs,+this.dataset.lat,+this.dataset.lon);return false;">View on map</a>' : '') +
         '</div>';
     }
   } catch { res.innerHTML = '<div class="error-box">Request failed. Please try again.</div>'; }
@@ -385,7 +383,7 @@ async function loadMapSites(fitBounds) {
   if (fitBounds && bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
 
-async function initMap() {
+function initMapBase() {
   if (!leafletMap) {
     leafletMap = L.map('map').setView([51.5, -2.0], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -427,8 +425,23 @@ async function initMap() {
       else clearLoS();
     });
   }
+}
 
+async function initMap() {
+  initMapBase();
   await loadMapSites(true);
+}
+
+async function goToMapLoS(cs, lat, lon) {
+  document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+  document.querySelector('[data-view="map"]').classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-map').classList.add('active');
+  initMapBase();
+  await loadMapSites(false);
+  leafletMap.setView([lat, lon], 11);
+  const site = allSitesData.find(s => s.call_sign && s.call_sign.toLowerCase() === cs.toLowerCase());
+  if (site) showLoS(site);
 }
 
 // ── Pin drop ──────────────────────────────────────────────────
