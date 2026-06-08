@@ -14,6 +14,7 @@ import (
 )
 
 var buildHash = "dev"
+var writeToken string
 
 type losEntry struct {
 	Clear  bool    `json:"clear"`
@@ -133,6 +134,7 @@ const indexHTML = `<!DOCTYPE html>
   <a href="#" class="active" data-view="lookup" title="Look up and edit">Lookup</a>
   <a href="#" data-view="sites">Sites</a>
   <a href="#" data-view="map">Map</a>
+  <button id="token-btn" onclick="promptToken()" style="margin-left:auto;background:transparent;border:1px solid rgba(255,255,255,0.45);color:rgba(255,255,255,0.85);border-radius:5px;padding:0.2rem 0.65rem;cursor:pointer;font-size:0.8rem;font-family:inherit;"></button>
 </nav>
 
 <div id="view-lookup" class="view active">
@@ -197,6 +199,42 @@ const indexHTML = `<!DOCTYPE html>
 </div>
 
 <script>
+// ── Write token ──────────────────────────────────────────────
+let writeToken = localStorage.getItem('roc-write-token') || '';
+
+function updateTokenBtn() {
+  const btn = document.getElementById('token-btn');
+  btn.textContent = writeToken ? 'Unlocked' : 'Locked';
+  btn.title = writeToken ? 'Write access on — click to change' : 'Click to enter write token';
+  btn.style.opacity = writeToken ? '1' : '0.55';
+}
+updateTokenBtn();
+
+function promptToken() {
+  const t = prompt('Write token (blank to clear):', writeToken);
+  if (t === null) return;
+  writeToken = t.trim();
+  if (writeToken) localStorage.setItem('roc-write-token', writeToken);
+  else localStorage.removeItem('roc-write-token');
+  updateTokenBtn();
+}
+
+async function authFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (writeToken) headers['X-Write-Token'] = writeToken;
+  const r = await fetch(url, { ...opts, headers });
+  if (r.status === 401) {
+    const t = prompt('Write token required:');
+    if (!t) return r;
+    writeToken = t.trim();
+    localStorage.setItem('roc-write-token', writeToken);
+    updateTokenBtn();
+    headers['X-Write-Token'] = writeToken;
+    return fetch(url, { ...opts, headers });
+  }
+  return r;
+}
+
 // ── Navigation ───────────────────────────────────────────────
 let leafletMap = null;
 
@@ -271,7 +309,7 @@ async function loadSitesTable() {
 
 async function deleteSite(cs) {
   if (!confirm('Delete ' + cs + '?')) return;
-  await fetch('/qrz/sites/' + encodeURIComponent(cs), { method: 'DELETE' });
+  await authFetch('/qrz/sites/' + encodeURIComponent(cs), { method: 'DELETE' });
   loadSitesTable();
 }
 
@@ -340,7 +378,7 @@ document.getElementById('site-form').addEventListener('submit', async e => {
   };
   const url = editMode ? '/qrz/sites/' + encodeURIComponent(editCallsign) : '/qrz/sites';
   const method = editMode ? 'PUT' : 'POST';
-  const resp = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const resp = await authFetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
   if (resp.ok) { closeModal(); loadSitesTable(); }
   else { const d = await resp.json(); alert(d.error || 'Save failed'); }
 });
@@ -475,7 +513,7 @@ async function savePinSite() {
   const btn = document.getElementById('pin-save-btn');
   btn.disabled = true;
   try {
-    const resp = await fetch('/qrz/sites/pin', {
+    const resp = await authFetch('/qrz/sites/pin', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ name, lat: pendingPinLatLng.lat, lon: pendingPinLatLng.lng }),
@@ -538,10 +576,20 @@ function esc(s) {
 </body>
 </html>`
 
+func okToWrite(w http.ResponseWriter, r *http.Request) bool {
+	if writeToken == "" || r.Header.Get("X-Write-Token") == writeToken {
+		return true
+	}
+	w.WriteHeader(http.StatusUnauthorized)
+	json.NewEncoder(w).Encode(map[string]string{"error": "unauthorised"})
+	return false
+}
+
 func main() {
 	username := os.Getenv("QRZ_USERNAME")
 	password := os.Getenv("QRZ_PASSWORD")
 	port := os.Getenv("QRZ_PORT")
+	writeToken = os.Getenv("QRZ_WRITE_TOKEN")
 
 	if username == "" || password == "" {
 		log.Fatal("QRZ_USERNAME and QRZ_PASSWORD environment variables are required")
@@ -565,6 +613,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !okToWrite(w, r) {
 			return
 		}
 		if t50Dir == "" {
@@ -670,6 +721,9 @@ func main() {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		if !okToWrite(w, r) {
+			return
+		}
 		var body struct {
 			Name string  `json:"name"`
 			Lat  float32 `json:"lat"`
@@ -718,6 +772,9 @@ func main() {
 			json.NewEncoder(w).Encode(sites)
 
 		case http.MethodPost:
+			if !okToWrite(w, r) {
+				return
+			}
 			var body struct {
 				CallSign string   `json:"call_sign"`
 				Name     string   `json:"name"`
@@ -760,6 +817,9 @@ func main() {
 
 		switch r.Method {
 		case http.MethodPut:
+			if !okToWrite(w, r) {
+				return
+			}
 			var body struct {
 				Name string   `json:"name"`
 				Lat  float32  `json:"lat"`
@@ -783,6 +843,9 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
 
 		case http.MethodDelete:
+			if !okToWrite(w, r) {
+				return
+			}
 			if err := db.DeleteQTH(cs); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
