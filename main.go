@@ -321,7 +321,7 @@ async function loadPinsTable() {
   const pins = (sites || []).filter(s => s.site_type === 'pin').sort((a, b) => a.name.localeCompare(b.name));
   if (!pins.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#a0aec0;padding:1rem">No pins yet. Drop one from the Map view.</td></tr>'; return; }
   tbody.innerHTML = pins.map(s => '<tr>' +
-    '<td>' + esc(s.name) + '</td>' +
+    '<td><a class="map-link" style="font-size:inherit;font-weight:600" href="#" data-cs="' + esc(s.call_sign) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" onclick="goToMapLoS(this.dataset.cs,+this.dataset.lat,+this.dataset.lon);return false;">' + esc(s.name) + '</a></td>' +
     '<td>' + s.lat.toFixed(4) + '</td>' +
     '<td>' + s.lon.toFixed(4) + '</td>' +
     '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
@@ -339,7 +339,7 @@ async function loadQthsTable() {
   const qths = (sites || []).filter(s => s.site_type !== 'pin');
   if (!qths.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
   tbody.innerHTML = qths.map(s => '<tr>' +
-    '<td><span class="cs-link" title="Look up and edit" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
+    '<td><span class="cs-link" title="View on map" onclick="goToMapLoS(\'' + esc(s.call_sign) + '\',' + s.lat + ',' + s.lon + ')">' + esc(s.call_sign) + '</span></td>' +
     '<td>' + esc(s.name) + '</td>' +
     '<td>' + s.lat.toFixed(4) + '</td>' +
     '<td>' + s.lon.toFixed(4) + '</td>' +
