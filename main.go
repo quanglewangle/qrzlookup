@@ -152,7 +152,7 @@ const indexHTML = `<!DOCTYPE html>
     <h2>Pins</h2>
   </div>
   <table>
-    <thead><tr><th>Name</th><th>Lat</th><th>Lon</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
+    <thead><tr><th title="Click a name to open the map centred on that pin">Name</th><th>Lat</th><th>Lon</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
     <tbody id="pins-tbody"></tbody>
   </table>
 </div>
@@ -163,7 +163,7 @@ const indexHTML = `<!DOCTYPE html>
     <button class="btn btn-success" onclick="openAddModal()">+ Add New</button>
   </div>
   <table>
-    <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th title="Antenna height above ground (m)">QNF</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
+    <thead><tr><th title="Click a callsign to open the map centred on that site">Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th title="Antenna height above ground (m)">QNF</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
     <tbody id="qths-tbody"></tbody>
   </table>
 </div>
