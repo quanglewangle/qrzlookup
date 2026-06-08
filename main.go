@@ -132,7 +132,8 @@ const indexHTML = `<!DOCTYPE html>
 <nav>
   <span class="brand">ROC Locations</span>
   <a href="#" class="active" data-view="lookup" title="Look up and edit">Lookup</a>
-  <a href="#" data-view="sites">Sites</a>
+  <a href="#" data-view="pins">Pins</a>
+  <a href="#" data-view="qths">QTHs</a>
   <a href="#" data-view="map">Map</a>
   <button id="token-btn" onclick="promptToken()" style="margin-left:auto;background:transparent;border:1px solid rgba(255,255,255,0.45);color:rgba(255,255,255,0.85);border-radius:5px;padding:0.2rem 0.65rem;cursor:pointer;font-size:0.8rem;font-family:inherit;"></button>
 </nav>
@@ -146,14 +147,24 @@ const indexHTML = `<!DOCTYPE html>
   <div id="lookup-result"></div>
 </div>
 
-<div id="view-sites" class="view">
+<div id="view-pins" class="view">
+  <div class="sites-header">
+    <h2>Pins</h2>
+  </div>
+  <table>
+    <thead><tr><th>Name</th><th>Lat</th><th>Lon</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
+    <tbody id="pins-tbody"></tbody>
+  </table>
+</div>
+
+<div id="view-qths" class="view">
   <div class="sites-header">
     <h2>ROC Sites</h2>
     <button class="btn btn-success" onclick="openAddModal()">+ Add New</button>
   </div>
   <table>
     <thead><tr><th>Callsign</th><th>Name</th><th>Lat</th><th>Lon</th><th title="Antenna height above ground (m)">QNF</th><th title="Height above sea level (m)">QNH (m)</th><th></th></tr></thead>
-    <tbody id="sites-tbody"></tbody>
+    <tbody id="qths-tbody"></tbody>
   </table>
 </div>
 
@@ -246,7 +257,8 @@ document.querySelectorAll('nav a').forEach(a => {
     a.classList.add('active');
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + view).classList.add('active');
-    if (view === 'sites') loadSitesTable();
+    if (view === 'pins') loadPinsTable();
+    if (view === 'qths') loadQthsTable();
     if (view === 'map') initMap();
   });
 });
@@ -282,35 +294,54 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
   btn.disabled = false;
 });
 
-// ── Sites table ──────────────────────────────────────────────
-async function loadSitesTable() {
-  const tbody = document.getElementById('sites-tbody');
+// ── Sites tables ─────────────────────────────────────────────
+function reloadActiveSiteView() {
+  if (document.getElementById('view-pins').classList.contains('active')) loadPinsTable();
+  else if (document.getElementById('view-qths').classList.contains('active')) loadQthsTable();
+}
+
+async function loadPinsTable() {
+  const tbody = document.getElementById('pins-tbody');
+  tbody.innerHTML = '<tr><td colspan="5"><div class="spinner"></div></td></tr>';
+  const sites = await fetch('/qrz/sites').then(r => r.json());
+  const pins = (sites || []).filter(s => s.site_type === 'pin').sort((a, b) => a.name.localeCompare(b.name));
+  if (!pins.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#a0aec0;padding:1rem">No pins yet. Drop one from the Map view.</td></tr>'; return; }
+  tbody.innerHTML = pins.map(s => '<tr>' +
+    '<td>' + esc(s.name) + '</td>' +
+    '<td>' + s.lat.toFixed(4) + '</td>' +
+    '<td>' + s.lon.toFixed(4) + '</td>' +
+    '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
+    '<td><div class="actions">' +
+    '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
+    '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
+    '</div></td></tr>'
+  ).join('');
+}
+
+async function loadQthsTable() {
+  const tbody = document.getElementById('qths-tbody');
   tbody.innerHTML = '<tr><td colspan="7"><div class="spinner"></div></td></tr>';
   const sites = await fetch('/qrz/sites').then(r => r.json());
-  if (!sites || !sites.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
-  tbody.innerHTML = sites.map(s => {
-    const isPinSite = s.site_type === 'pin';
-    const csCell = isPinSite
-      ? '<td><span style="color:#16a34a;font-weight:700">&#128205; pin</span></td>'
-      : '<td><span class="cs-link" title="Look up and edit" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>';
-    return '<tr>' +
-      csCell +
-      '<td>' + esc(s.name) + '</td>' +
-      '<td>' + s.lat.toFixed(4) + '</td>' +
-      '<td>' + s.lon.toFixed(4) + '</td>' +
-      '<td>' + (s.qnf != null ? s.qnf : 3) + '</td>' +
-      '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
-      '<td><div class="actions">' +
-      '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
-      '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
-      '</div></td></tr>';
-  }).join('');
+  const qths = (sites || []).filter(s => s.site_type !== 'pin');
+  if (!qths.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;padding:1rem">No sites yet.</td></tr>'; return; }
+  tbody.innerHTML = qths.map(s => '<tr>' +
+    '<td><span class="cs-link" title="Look up and edit" onclick="lookupAndSwitch(\'' + esc(s.call_sign) + '\')">' + esc(s.call_sign) + '</span></td>' +
+    '<td>' + esc(s.name) + '</td>' +
+    '<td>' + s.lat.toFixed(4) + '</td>' +
+    '<td>' + s.lon.toFixed(4) + '</td>' +
+    '<td>' + (s.qnf != null ? s.qnf : 3) + '</td>' +
+    '<td>' + (s.qnh != null ? Math.round(s.qnh) : '—') + '</td>' +
+    '<td><div class="actions">' +
+    '<button class="btn btn-primary btn-sm" onclick=\'openEditModal(' + JSON.stringify(s) + ')\'>Edit</button>' +
+    '<button class="btn btn-danger btn-sm" onclick="deleteSite(\'' + esc(s.call_sign) + '\')">Delete</button>' +
+    '</div></td></tr>'
+  ).join('');
 }
 
 async function deleteSite(cs) {
   if (!confirm('Delete ' + cs + '?')) return;
   await authFetch('/qrz/sites/' + encodeURIComponent(cs), { method: 'DELETE' });
-  loadSitesTable();
+  reloadActiveSiteView();
 }
 
 function lookupAndSwitch(cs) {
@@ -379,7 +410,7 @@ document.getElementById('site-form').addEventListener('submit', async e => {
   const url = editMode ? '/qrz/sites/' + encodeURIComponent(editCallsign) : '/qrz/sites';
   const method = editMode ? 'PUT' : 'POST';
   const resp = await authFetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  if (resp.ok) { closeModal(); loadSitesTable(); }
+  if (resp.ok) { closeModal(); reloadActiveSiteView(); }
   else { const d = await resp.json(); alert(d.error || 'Save failed'); }
 });
 
