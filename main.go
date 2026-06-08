@@ -178,7 +178,11 @@ const indexHTML = `<!DOCTYPE html>
     <form id="site-form">
       <div class="form-group">
         <label>Callsign</label>
-        <input type="text" id="f-callsign" required style="text-transform:uppercase">
+        <input type="text" id="f-callsign" required
+          pattern="[A-Z0-9]{1,3}[0-9][A-Z]{1,5}"
+          title="Valid amateur callsign e.g. G8GDS, 2E0FVC, VE3YW"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9\/]/g,'')"
+          autocomplete="off" autocorrect="off" spellcheck="false">
         <button type="button" class="btn btn-primary btn-sm" style="margin-top:0.4rem" onclick="qrzFill()">Fill from QRZ</button>
       </div>
       <div class="form-group"><label>Name</label><input type="text" id="f-name"></div>
