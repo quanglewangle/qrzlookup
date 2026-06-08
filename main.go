@@ -263,6 +263,15 @@ document.querySelectorAll('nav a').forEach(a => {
   });
 });
 
+async function updateNavCounts() {
+  const sites = await fetch('/qrz/sites').then(r => r.json()).catch(() => []);
+  const pins = (sites || []).filter(s => s.site_type === 'pin').length;
+  const qths = (sites || []).filter(s => s.site_type !== 'pin').length;
+  document.querySelector('[data-view="pins"]').textContent = 'Pins (' + pins + ')';
+  document.querySelector('[data-view="qths"]').textContent = 'QTHs (' + qths + ')';
+}
+updateNavCounts();
+
 // ── Lookup ───────────────────────────────────────────────────
 document.getElementById('lookup-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -296,6 +305,7 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
 
 // ── Sites tables ─────────────────────────────────────────────
 function reloadActiveSiteView() {
+  updateNavCounts();
   if (document.getElementById('view-pins').classList.contains('active')) loadPinsTable();
   else if (document.getElementById('view-qths').classList.contains('active')) loadQthsTable();
 }
@@ -552,6 +562,7 @@ async function savePinSite() {
     if (resp.ok) {
       closePinModal();
       loadMapSites(false);
+      updateNavCounts();
     } else {
       const d = await resp.json();
       alert(d.error || 'Save failed');
