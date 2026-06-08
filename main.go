@@ -291,8 +291,11 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
       res.innerHTML = '<div class="error-box">' + esc(data.error) + '</div>';
     } else {
       const loc = [data.city, data.state, data.country].filter(Boolean).join(', ');
+      const csEl = (data.lat && data.lon)
+        ? '<a class="callsign-big" style="text-decoration:none;cursor:pointer;" href="#" data-cs="' + esc(data.callsign) + '" data-lat="' + data.lat + '" data-lon="' + data.lon + '" onclick="goToMapLoS(this.dataset.cs,+this.dataset.lat,+this.dataset.lon);return false;">' + esc(data.callsign) + '</a>'
+        : '<div class="callsign-big">' + esc(data.callsign) + '</div>';
       res.innerHTML = '<div class="card">' +
-        '<div class="callsign-big">' + esc(data.callsign) + '</div>' +
+        csEl +
         '<div class="name-big">' + esc(data.name || '—') + '</div>' +
         '<hr class="divider">' +
         '<div class="fields">' +
@@ -300,7 +303,6 @@ document.getElementById('lookup-form').addEventListener('submit', async e => {
         (data.grid ? fld('Grid', data.grid) : '') +
         (data.lat && data.lon ? fld('Lat / Lon', data.lat + ', ' + data.lon) : '') +
         '</div>' +
-        (data.lat && data.lon ? '<a class="map-link" href="#" data-cs="' + esc(data.callsign) + '" data-lat="' + data.lat + '" data-lon="' + data.lon + '" onclick="goToMapLoS(this.dataset.cs,+this.dataset.lat,+this.dataset.lon);return false;">View on map</a>' : '') +
         '</div>';
     }
   } catch { res.innerHTML = '<div class="error-box">Request failed. Please try again.</div>'; }
