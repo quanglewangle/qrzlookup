@@ -952,11 +952,11 @@ func main() {
 		json.NewEncoder(w).Encode(result)
 	})
 
-	// GET /qrz/los?lat1=&lon1=&lat2=&lon2=&h1=&h2=
+	// GET /qrz/los?lat1=&lon1=&lat2=&lon2=&h1=&h2= (nginx strips /qrz/ → /los)
 	// Terrain LoS between two WGS84 points using OS Terrain 50.
 	// h1/h2 = antenna height above ground in metres (default 10).
 	// Returns 503 if TERRAIN50_DIR not set, 422 if either point outside GB.
-	http.HandleFunc("/qrz/los", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/los", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
