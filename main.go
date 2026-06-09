@@ -952,6 +952,71 @@ func main() {
 		json.NewEncoder(w).Encode(result)
 	})
 
+	// GET /qrz/los?lat1=&lon1=&lat2=&lon2=&h1=&h2=
+	// Terrain LoS between two WGS84 points using OS Terrain 50.
+	// h1/h2 = antenna height above ground in metres (default 10).
+	// Returns 503 if TERRAIN50_DIR not set, 422 if either point outside GB.
+	http.HandleFunc("/qrz/los", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if t50Dir == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "terrain data not configured"})
+			return
+		}
+		q := r.URL.Query()
+		lat1, e1 := strconv.ParseFloat(q.Get("lat1"), 64)
+		lon1, e2 := strconv.ParseFloat(q.Get("lon1"), 64)
+		lat2, e3 := strconv.ParseFloat(q.Get("lat2"), 64)
+		lon2, e4 := strconv.ParseFloat(q.Get("lon2"), 64)
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "lat1, lon1, lat2, lon2 required"})
+			return
+		}
+		h1, _ := strconv.ParseFloat(q.Get("h1"), 64)
+		h2, _ := strconv.ParseFloat(q.Get("h2"), 64)
+		if h1 <= 0 {
+			h1 = 10
+		}
+		if h2 <= 0 {
+			h2 = 10
+		}
+		elev1, err := terrain50.ElevationAt(t50Dir, lat1, lon1)
+		if err != nil {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"error": "my position outside GB grid"})
+			return
+		}
+		elev2, err := terrain50.ElevationAt(t50Dir, lat2, lon2)
+		if err != nil {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"error": "target outside GB grid"})
+			return
+		}
+		distKm := terrain50.HaversineM(lat1, lon1, lat2, lon2) / 1000.0
+		result := terrain50.LoSCheck(t50Dir, lat1, lon1, elev1+h1, lat2, lon2, elev2+h2)
+		type losResp struct {
+			Clear      bool    `json:"clear"`
+			MyElev     float64 `json:"my_elev"`
+			TargetElev float64 `json:"target_elev"`
+			DistanceKm float64 `json:"distance_km"`
+			ObsLat     float64 `json:"obs_lat,omitempty"`
+			ObsLon     float64 `json:"obs_lon,omitempty"`
+		}
+		json.NewEncoder(w).Encode(losResp{
+			Clear:      result.Clear,
+			MyElev:     elev1,
+			TargetElev: elev2,
+			DistanceKm: distKm,
+			ObsLat:     result.ObsLat,
+			ObsLon:     result.ObsLon,
+		})
+	})
+
 	log.Printf("qrzlook listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
